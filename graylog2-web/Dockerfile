@@ -17,7 +17,7 @@ RUN \
   && rm -f $GL_PACKAGE \
   && mv /tmp/graylog-web-interface-${GL_VERSION} /graylog2-web
 
-ADD config/graylog2-web-interface.conf /graylog2-web/conf/graylog2-web-interface.conf
+ADD config/graylog-web-interface.conf /graylog2-web/conf/graylog-web-interface.conf
 
 ADD run_templates/run_graylog2_web.sh /graylog2-web/run_graylog2_web.sh
 
