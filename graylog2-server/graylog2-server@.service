@@ -1,0 +1,71 @@
+# Approach:
+# - use skydns for service discovery
+# - data mounted on local directory but small -> mobile
+# - use the machine-id as graylog node-id
+
+[Unit]
+Description=Graylog2 server
+
+After=docker.service
+After=etcd2.service
+After=flanneld.service
+
+Requires=docker.service
+Requires=flanneld.service
+
+[Service]
+Restart=on-failure
+RestartSec=15s
+TimeoutStartSec=3m
+TimeoutStopSec=25
+KillMode=none
+
+EnvironmentFile=/etc/environment
+Environment="IMG=bidibi/graylog2-server"
+Environment="CONTAINER=%p.%i"
+
+# These are set here so they don't show in the command line
+Environment=GRAYLOG_SERVER_SECRET=aaa
+Environment=GRAYLOG_PASSWORD=bbb
+
+Environment=MONGODB_PORT=27000
+
+ExecStartPre=-/usr/bin/docker kill ${CONTAINER}
+ExecStartPre=-/usr/bin/docker rm ${CONTAINER}
+ExecStartPre=/usr/bin/docker pull ${IMG}
+ExecStart=/bin/bash -c ' \
+  export ES_HOSTS=` dig @localhost +short A elasticsearch.skydns.local | paste -s -d"," ` ; \
+  export MONGODB_SERVERS=`dig @localhost +short SRV mongo.skydns.local \
+  | awk \'{print substr($4, 0, length($4)-1) ":" $3}\' \
+  | paste -s -d"," `; \
+  echo "=== Mongo servers: $MONGODB_SERVERS"; \
+  /usr/bin/docker run \
+    --name ${CONTAINER} \
+    --dns ${COREOS_PRIVATE_IPV4} \
+    --hostname "gl-%m" \
+    --env "SERVICE_ID=%i" \
+    --env "SERVICE_NAME=%p" \
+    --volume /tmp \
+    --volume ${DOCKER_MOUNTS_DIR}/%p/var/lib/graylog-server/journal:/var/lib/graylog-server/journal \
+    --volume ${DOCKER_MOUNTS_DIR}/%p/var/opt/graylog/data:/var/opt/graylog/data \
+    --volume ${DOCKER_MOUNTS_DIR}/%p/var/log/graylog:/var/log/graylog \
+    --publish 12201:12201 \
+    --publish 12900:12900 \
+    --publish 9300:9300 \
+    --env HOST_IP=$COREOS_PUBLIC_IPV4 \
+    --env ES_HOSTS \
+    --env MONGODB_SERVERS \
+    --env MONGODB_RSET=graylog \
+    --env GRAYLOG_NODE_ID=gl-%m \
+    --env GRAYLOG_SERVER_SECRET \
+    --env GRAYLOG_PASSWORD \
+    --env GRAYLOG_SMTP_SERVER=$COREOS_PRIVATE_IPV4 \
+    ${IMG} \
+'
+
+ExecStop=/usr/bin/docker stop ${CONTAINER}
+
+[X-Fleet]
+Conflicts=%p@*.service
+Conflicts=elasticsearch@*.service
+#MachineMetadata=run_graylog=true
